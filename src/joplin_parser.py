@@ -9,13 +9,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 
-# Tipos de itens padrão do Joplin
+# Tipos de itens padrão do Joplin (ModelType oficial)
 TYPE_NOTE = 1
 TYPE_FOLDER = 2
-TYPE_TAG = 4
-TYPE_NOTE_TAG = 5
-TYPE_RESOURCE = 6
-TYPE_SETTING = 7
+TYPE_SETTING = 3
+TYPE_RESOURCE = 4
+TYPE_TAG = 5
+TYPE_NOTE_TAG = 6
 
 def generate_joplin_id() -> str:
     """Gera um UUID de 32 caracteres hexadecimais compatível com o Joplin."""
@@ -80,9 +80,12 @@ def parse_joplin_file(content: str) -> Dict[str, Any]:
     # Separa título e corpo
     item_type = metadata.get("type_", TYPE_NOTE)
     
-    if item_type == TYPE_FOLDER:
-        # Para cadernos/pastas, a primeira linha de texto é o nome
+    if item_type in (TYPE_FOLDER, TYPE_TAG):
+        # Para cadernos/pastas e tags, a primeira linha de texto é o nome
         title = content_lines[0].strip() if content_lines else metadata.get("title", "Sem Nome")
+        body = ""
+    elif item_type == TYPE_NOTE_TAG:
+        title = ""
         body = ""
     else:
         # Para notas, primeira linha é título, o resto é o corpo
@@ -196,6 +199,67 @@ def serialize_joplin_folder(
         "\n".join(metadata_block)
     ]
     return "\n".join(parts)
+
+
+def serialize_joplin_tag(
+    tag_id: str,
+    title: str,
+    created_time: Optional[str] = None,
+    updated_time: Optional[str] = None
+) -> str:
+    """Serializa uma tag (type_: 5) no padrão exato do Joplin."""
+    now_str = format_iso_time()
+    c_time = created_time or now_str
+    u_time = updated_time or now_str
+
+    metadata_block = [
+        f"id: {tag_id}",
+        f"created_time: {c_time}",
+        f"updated_time: {u_time}",
+        f"user_created_time: {c_time}",
+        f"user_updated_time: {u_time}",
+        "encryption_cipher_text: ",
+        "encryption_applied: 0",
+        "is_shared: 0",
+        "parent_id: ",
+        "user_data: ",
+        f"type_: {TYPE_TAG}"
+    ]
+
+    parts = [
+        title.strip(),
+        "",
+        "\n".join(metadata_block)
+    ]
+    return "\n".join(parts)
+
+
+def serialize_joplin_note_tag(
+    assoc_id: str,
+    note_id: str,
+    tag_id: str,
+    created_time: Optional[str] = None,
+    updated_time: Optional[str] = None
+) -> str:
+    """Serializa um vínculo nota-tag (type_: 6) no padrão exato do Joplin."""
+    now_str = format_iso_time()
+    c_time = created_time or now_str
+    u_time = updated_time or now_str
+
+    metadata_block = [
+        f"id: {assoc_id}",
+        f"note_id: {note_id}",
+        f"tag_id: {tag_id}",
+        f"created_time: {c_time}",
+        f"updated_time: {u_time}",
+        f"user_created_time: {c_time}",
+        f"user_updated_time: {u_time}",
+        "encryption_cipher_text: ",
+        "encryption_applied: 0",
+        "is_shared: 0",
+        f"type_: {TYPE_NOTE_TAG}"
+    ]
+    return "\n".join(metadata_block)
 
 
 # --- Renderizador de Markdown Rico e Interativo (Qt RichText HTML) ---

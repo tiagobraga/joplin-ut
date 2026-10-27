@@ -10,6 +10,13 @@ try:
         init_db,
         get_all_folders,
         get_folder_by_id,
+        get_all_tags,
+        get_tag_by_id,
+        get_tag_by_title,
+        upsert_tag,
+        mark_tag_deleted,
+        get_tags_for_note,
+        toggle_note_tag_link,
         get_notes,
         get_note_by_id,
         upsert_note,
@@ -33,6 +40,13 @@ except ImportError:
         init_db,
         get_all_folders,
         get_folder_by_id,
+        get_all_tags,
+        get_tag_by_id,
+        get_tag_by_title,
+        upsert_tag,
+        mark_tag_deleted,
+        get_tags_for_note,
+        toggle_note_tag_link,
         get_notes,
         get_note_by_id,
         upsert_note,
@@ -120,6 +134,97 @@ def delete_folder(folder_id: str) -> Dict[str, Any]:
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+# --- Gestão de Etiquetas (Tags) ---
+
+def get_tags_list() -> List[Dict[str, Any]]:
+    """Retorna todas as tags ativas com a contagem de notas associadas."""
+    try:
+        return get_all_tags()
+    except Exception as e:
+        print(f"[Main] Erro ao listar tags: {e}", flush=True)
+        return []
+
+def create_tag(title: str, note_id: str = "") -> Dict[str, Any]:
+    """Cria uma nova tag (ou reutiliza existente pelo nome) e opcionalmente a vincula a uma nota."""
+    try:
+        clean_title = (title or "").strip().lstrip("#").strip()
+        if not clean_title:
+            return {"success": False, "error": "Nome de tag vazio"}
+        now_str = format_iso_time()
+        existing = get_tag_by_title(clean_title)
+        if existing:
+            t_id = existing["id"]
+            clean_title = existing["title"]
+        else:
+            t_id = generate_joplin_id()
+            upsert_tag(tag_id=t_id, title=clean_title, updated_time=now_str, dirty=1, deleted=0)
+
+        clean_note_id = (note_id or "").strip()
+        if clean_note_id:
+            current_note_tags = {t["id"] for t in get_tags_for_note(clean_note_id)}
+            if t_id not in current_note_tags:
+                toggle_note_tag_link(clean_note_id, t_id, generate_joplin_id(), now_str)
+
+        return {
+            "success": True,
+            "id": t_id,
+            "title": clean_title,
+            "note_tags": get_tags_for_note(clean_note_id) if clean_note_id else []
+        }
+    except Exception as e:
+        print(f"[Main] Erro ao criar tag: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+
+def rename_tag(tag_id: str, new_title: str) -> Dict[str, Any]:
+    """Renomeia uma tag existente e marca como dirty."""
+    try:
+        existing = get_tag_by_id(tag_id)
+        if not existing:
+            return {"success": False, "error": "Tag não encontrada"}
+        clean_title = (new_title or "").strip().lstrip("#").strip()
+        if not clean_title:
+            return {"success": False, "error": "Nome inválido"}
+        now_str = format_iso_time()
+        upsert_tag(tag_id=tag_id, title=clean_title, updated_time=now_str, dirty=1, deleted=0)
+        return {"success": True, "id": tag_id, "title": clean_title}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def delete_tag(tag_id: str) -> Dict[str, Any]:
+    """Marca uma tag e todos os vínculos dela como deletados para sincronização."""
+    try:
+        if not tag_id:
+            return {"success": False, "error": "ID inválido"}
+        mark_tag_deleted(tag_id)
+        return {"success": True}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+def get_note_tags(note_id: str) -> List[Dict[str, Any]]:
+    """Retorna as tags associadas a uma nota específica."""
+    try:
+        return get_tags_for_note((note_id or "").strip())
+    except Exception as e:
+        return []
+
+def toggle_note_tag(note_id: str, tag_id: str) -> Dict[str, Any]:
+    """Alterna o vínculo entre uma nota e uma tag existente."""
+    try:
+        clean_note = (note_id or "").strip()
+        clean_tag = (tag_id or "").strip()
+        if not clean_note or not clean_tag:
+            return {"success": False, "error": "Nota ou tag inválida"}
+        now_str = format_iso_time()
+        attached = toggle_note_tag_link(clean_note, clean_tag, generate_joplin_id(), now_str)
+        return {
+            "success": True,
+            "attached": attached,
+            "note_tags": get_tags_for_note(clean_note)
+        }
+    except Exception as e:
+        print(f"[Main] Erro ao alternar tag na nota: {e}", flush=True)
+        return {"success": False, "error": str(e)}
+
 def get_notes_list(
     folder_id: Optional[str] = None,
     search: Optional[str] = None,
@@ -159,6 +264,8 @@ def save_sort_preferences(sort_by: str, sort_order: str) -> Dict[str, Any]:
 def _resolve_folder_title(folder_id: str) -> str:
     if not folder_id:
         return "Sem Caderno"
+    if folder_id.startswith("tag:"):
+        return "Sem Caderno"
     folder = get_folder_by_id(folder_id)
     return folder.get("title", "Sem Caderno") if folder else "Sem Caderno"
 
@@ -172,6 +279,7 @@ def get_single_note(note_id: str) -> Optional[Dict[str, Any]]:
         note["rendered_html"] = render_markdown_to_html(body_str)
         note["updated_display"] = format_display_date(note.get("updated_time") or "")
         note["folder_title"] = _resolve_folder_title(note.get("parent_id") or "")
+        note["tags"] = get_tags_for_note(note_id)
         return note
     except Exception as e:
         print(f"[Main] Erro ao obter nota {note_id}: {e}", flush=True)
@@ -206,6 +314,8 @@ def save_note_content(note_id: str, parent_id: str, title: str, body: str) -> Di
 
         clean_title = title.strip() if title and title.strip() else "Sem Título"
         clean_parent = (parent_id or "").strip()
+        if clean_parent.startswith("tag:"):
+            clean_parent = ""
         upsert_note(
             note_id=effective_id,
             parent_id=clean_parent,
@@ -224,6 +334,7 @@ def save_note_content(note_id: str, parent_id: str, title: str, body: str) -> Di
             "title": clean_title,
             "parent_id": clean_parent,
             "folder_title": _resolve_folder_title(clean_parent),
+            "tags": get_tags_for_note(effective_id),
             "updated_display": format_display_date(now_str),
             "rendered_html": render_markdown_to_html(body or ""),
             "dirty": 1

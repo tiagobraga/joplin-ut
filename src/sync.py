@@ -12,17 +12,25 @@ try:
         parse_joplin_file,
         serialize_joplin_note,
         serialize_joplin_folder,
+        serialize_joplin_tag,
+        serialize_joplin_note_tag,
         TYPE_NOTE,
-        TYPE_FOLDER
+        TYPE_FOLDER,
+        TYPE_TAG,
+        TYPE_NOTE_TAG
     )
     from db import (
         upsert_note,
         upsert_folder,
+        upsert_tag,
+        upsert_note_tag,
         get_local_etag_map,
         save_item_etag,
         get_dirty_items,
         clean_item_dirty,
+        clean_table_dirty,
         purge_deleted_item,
+        purge_table_deleted,
         mark_note_deleted
     )
 except ImportError:
@@ -32,17 +40,25 @@ except ImportError:
         parse_joplin_file,
         serialize_joplin_note,
         serialize_joplin_folder,
+        serialize_joplin_tag,
+        serialize_joplin_note_tag,
         TYPE_NOTE,
-        TYPE_FOLDER
+        TYPE_FOLDER,
+        TYPE_TAG,
+        TYPE_NOTE_TAG
     )
     from .db import (
         upsert_note,
         upsert_folder,
+        upsert_tag,
+        upsert_note_tag,
         get_local_etag_map,
         save_item_etag,
         get_dirty_items,
         clean_item_dirty,
+        clean_table_dirty,
         purge_deleted_item,
+        purge_table_deleted,
         mark_note_deleted
     )
 
@@ -75,8 +91,10 @@ def run_synchronization(progress_callback: Optional[Callable[[str, int], None]] 
     stats = {
         "downloaded_notes": 0,
         "downloaded_folders": 0,
+        "downloaded_tags": 0,
         "uploaded_notes": 0,
         "uploaded_folders": 0,
+        "uploaded_tags": 0,
         "deleted_remote": 0,
         "errors": []
     }
@@ -89,7 +107,12 @@ def run_synchronization(progress_callback: Optional[Callable[[str, int], None]] 
         remote_files = client.list_files()
         local_etags = {} if force_refresh else get_local_etag_map()
         initial_dirty = get_dirty_items()
-        dirty_ids = {x["id"] for x in initial_dirty["notes"]} | {x["id"] for x in initial_dirty["folders"]}
+        dirty_ids = (
+            {x["id"] for x in initial_dirty["notes"]}
+            | {x["id"] for x in initial_dirty["folders"]}
+            | {x["id"] for x in initial_dirty.get("tags", [])}
+            | {x["id"] for x in initial_dirty.get("note_tags", [])}
+        )
 
         # Filtrar apenas arquivos .md (exclui .resource, .sync, etc)
         joplin_md_files = [f for f in remote_files if f["filename"].endswith(".md") and not f["is_dir"]]
@@ -149,8 +172,33 @@ def run_synchronization(progress_callback: Optional[Callable[[str, int], None]] 
                     )
                     save_item_etag(item_id, effective_etag, item_type)
                     stats["downloaded_notes"] += 1
+                elif item_type == TYPE_TAG:
+                    u_time = meta.get("user_updated_time") or meta.get("updated_time") or ""
+                    upsert_tag(
+                        tag_id=meta.get("id", item_id),
+                        title=parsed.get("title", "Sem Nome"),
+                        updated_time=u_time,
+                        dirty=0,
+                        deleted=0
+                    )
+                    save_item_etag(item_id, effective_etag, item_type)
+                    stats["downloaded_tags"] += 1
+                elif item_type == TYPE_NOTE_TAG:
+                    u_time = meta.get("user_updated_time") or meta.get("updated_time") or ""
+                    n_id = meta.get("note_id", "")
+                    t_id = meta.get("tag_id", "")
+                    if n_id and t_id:
+                        upsert_note_tag(
+                            assoc_id=meta.get("id", item_id),
+                            note_id=n_id,
+                            tag_id=t_id,
+                            updated_time=u_time,
+                            dirty=0,
+                            deleted=0
+                        )
+                    save_item_etag(item_id, effective_etag, item_type)
                 else:
-                    # Registra o ETag de outros tipos do Joplin (tags, note_tags, resources, revisions)
+                    # Registra o ETag de outros tipos do Joplin (resources, revisions)
                     # para não re-baixá-los a cada sincronização
                     save_item_etag(item_id, effective_etag, item_type)
             except Exception as e:
@@ -217,6 +265,56 @@ def run_synchronization(progress_callback: Optional[Callable[[str, int], None]] 
                     stats["uploaded_notes"] += 1
                 except Exception as e:
                     stats["errors"].append(f"Erro ao enviar nota {n_id}: {str(e)}")
+
+        # Envia tags criadas ou editadas
+        for tag in dirty.get("tags", []):
+            t_id = tag["id"]
+            if tag["deleted"] == 1:
+                try:
+                    client.delete_file(f"{t_id}.md")
+                    purge_table_deleted("tags", t_id)
+                    stats["deleted_remote"] += 1
+                except Exception as e:
+                    stats["errors"].append(f"Erro ao deletar tag {t_id}: {str(e)}")
+            else:
+                try:
+                    content = serialize_joplin_tag(
+                        tag_id=t_id,
+                        title=tag["title"],
+                        updated_time=tag.get("updated_time", "")
+                    )
+                    new_etag = client.put_file_content(f"{t_id}.md", content)
+                    clean_table_dirty("tags", t_id)
+                    if new_etag:
+                        save_item_etag(t_id, new_etag, TYPE_TAG)
+                    stats["uploaded_tags"] += 1
+                except Exception as e:
+                    stats["errors"].append(f"Erro ao enviar tag {t_id}: {str(e)}")
+
+        # Envia associações nota-tag (note_tags) criadas ou removidas
+        for nt in dirty.get("note_tags", []):
+            nt_id = nt["id"]
+            if nt["deleted"] == 1:
+                try:
+                    client.delete_file(f"{nt_id}.md")
+                    purge_table_deleted("note_tags", nt_id)
+                    stats["deleted_remote"] += 1
+                except Exception as e:
+                    stats["errors"].append(f"Erro ao deletar vínculo tag {nt_id}: {str(e)}")
+            else:
+                try:
+                    content = serialize_joplin_note_tag(
+                        assoc_id=nt_id,
+                        note_id=nt["note_id"],
+                        tag_id=nt["tag_id"],
+                        updated_time=nt.get("updated_time", "")
+                    )
+                    new_etag = client.put_file_content(f"{nt_id}.md", content)
+                    clean_table_dirty("note_tags", nt_id)
+                    if new_etag:
+                        save_item_etag(nt_id, new_etag, TYPE_NOTE_TAG)
+                except Exception as e:
+                    stats["errors"].append(f"Erro ao enviar vínculo tag {nt_id}: {str(e)}")
 
         # Salva hora da sincronização
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")

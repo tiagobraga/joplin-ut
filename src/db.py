@@ -77,6 +77,29 @@ def init_db():
             )
         """)
 
+        # Tabela de etiquetas (Tags - type_: 5)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tags (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                updated_time TEXT,
+                dirty INTEGER DEFAULT 0,
+                deleted INTEGER DEFAULT 0
+            )
+        """)
+
+        # Tabela de associação Nota <-> Tag (NoteTag - type_: 6)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS note_tags (
+                id TEXT PRIMARY KEY,
+                note_id TEXT NOT NULL,
+                tag_id TEXT NOT NULL,
+                updated_time TEXT,
+                dirty INTEGER DEFAULT 0,
+                deleted INTEGER DEFAULT 0
+            )
+        """)
+
         # Índices para pesquisa instantânea e filtros
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_parent ON notes(parent_id)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_time DESC)")
@@ -85,6 +108,10 @@ def init_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_notes_dirty ON notes(dirty)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_folders_dirty ON folders(dirty)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_tags_dirty ON tags(dirty)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_dirty ON note_tags(dirty)")
 
         conn.commit()
 
@@ -238,6 +265,125 @@ def mark_folder_deleted(folder_id: str):
         cursor.execute("UPDATE folders SET deleted = 1, dirty = 1 WHERE id = ?", (folder_id,))
         conn.commit()
 
+# --- Operações de Etiquetas (Tags & NoteTags) ---
+
+def get_all_tags() -> List[Dict[str, Any]]:
+    """Retorna todas as tags ativas em ordem alfabética com contagem de notas associadas."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT t.id, t.title, t.updated_time, t.dirty,
+                   COUNT(DISTINCT n.id) as notes_count
+            FROM tags t
+            LEFT JOIN note_tags nt ON nt.tag_id = t.id AND nt.deleted = 0
+            LEFT JOIN notes n ON n.id = nt.note_id AND n.deleted = 0
+            WHERE t.deleted = 0
+            GROUP BY t.id, t.title, t.updated_time, t.dirty
+            ORDER BY t.title COLLATE NOCASE ASC
+        """)
+        return [dict(r) for r in cursor.fetchall()]
+
+def get_tag_by_id(tag_id: str) -> Optional[Dict[str, Any]]:
+    if not tag_id:
+        return None
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tags WHERE id = ? AND deleted = 0", (tag_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def get_tag_by_title(title: str) -> Optional[Dict[str, Any]]:
+    if not title or not title.strip():
+        return None
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM tags WHERE LOWER(title) = LOWER(?) AND deleted = 0", (title.strip(),))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def upsert_tag(tag_id: str, title: str, updated_time: str = "", dirty: int = 0, deleted: int = 0):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO tags (id, title, updated_time, dirty, deleted)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                updated_time = excluded.updated_time,
+                dirty = excluded.dirty,
+                deleted = excluded.deleted
+        """, (tag_id, title.strip(), updated_time, dirty, deleted))
+        conn.commit()
+
+def mark_tag_deleted(tag_id: str):
+    """Marca a tag e todos os vínculos note_tags dela como deletados para sincronização."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE tags SET deleted = 1, dirty = 1 WHERE id = ?", (tag_id,))
+        cursor.execute("UPDATE note_tags SET deleted = 1, dirty = 1 WHERE tag_id = ? AND deleted = 0", (tag_id,))
+        conn.commit()
+
+def upsert_note_tag(assoc_id: str, note_id: str, tag_id: str, updated_time: str = "", dirty: int = 0, deleted: int = 0):
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO note_tags (id, note_id, tag_id, updated_time, dirty, deleted)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                note_id = excluded.note_id,
+                tag_id = excluded.tag_id,
+                updated_time = excluded.updated_time,
+                dirty = excluded.dirty,
+                deleted = excluded.deleted
+        """, (assoc_id, note_id, tag_id, updated_time, dirty, deleted))
+        conn.commit()
+
+def get_tags_for_note(note_id: str) -> List[Dict[str, Any]]:
+    """Retorna todas as tags ativas associadas a uma nota."""
+    if not note_id:
+        return []
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT t.id, t.title
+            FROM tags t
+            INNER JOIN note_tags nt ON nt.tag_id = t.id
+            WHERE nt.note_id = ? AND nt.deleted = 0 AND t.deleted = 0
+            ORDER BY t.title COLLATE NOCASE ASC
+        """, (note_id,))
+        return [dict(r) for r in cursor.fetchall()]
+
+def toggle_note_tag_link(note_id: str, tag_id: str, new_assoc_id: str, now_str: str) -> bool:
+    """Alterna o vínculo entre uma nota e uma tag. Retorna True se ficou vinculada, False se desvinculada."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, deleted FROM note_tags WHERE note_id = ? AND tag_id = ? ORDER BY deleted ASC LIMIT 1",
+            (note_id, tag_id)
+        )
+        row = cursor.fetchone()
+        if row and row["deleted"] == 0:
+            cursor.execute(
+                "UPDATE note_tags SET deleted = 1, dirty = 1, updated_time = ? WHERE note_id = ? AND tag_id = ? AND deleted = 0",
+                (now_str, note_id, tag_id)
+            )
+            conn.commit()
+            return False
+        elif row and row["deleted"] == 1:
+            cursor.execute(
+                "UPDATE note_tags SET deleted = 0, dirty = 1, updated_time = ? WHERE id = ?",
+                (now_str, row["id"])
+            )
+            conn.commit()
+            return True
+        else:
+            cursor.execute(
+                "INSERT INTO note_tags (id, note_id, tag_id, updated_time, dirty, deleted) VALUES (?, ?, ?, ?, 1, 0)",
+                (new_assoc_id, note_id, tag_id, now_str)
+            )
+            conn.commit()
+            return True
+
 # --- Operações de Notas (Notes) com Ordenação Avançada ---
 
 VALID_SORT_FIELDS = {
@@ -255,7 +401,7 @@ def get_notes(
 ) -> List[Dict[str, Any]]:
     """
     Retorna lista de notas com ordenação customizável (data de atualização, criação, título),
-    suporte a filtro por caderno específico e busca por texto.
+    suporte a filtro por caderno específico, filtro por tag ('tag:<id>') e busca por texto.
     """
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -264,7 +410,11 @@ def get_notes(
 
         if folder_id and folder_id.strip():
             target_id = folder_id.strip()
-            if include_subfolders:
+            if target_id.startswith("tag:"):
+                tag_id = target_id[4:].strip()
+                conditions.append("id IN (SELECT note_id FROM note_tags WHERE tag_id = ? AND deleted = 0)")
+                params.append(tag_id)
+            elif include_subfolders:
                 folder_ids = get_descendant_folder_ids(target_id)
                 placeholders = ",".join(["?"] * len(folder_ids))
                 conditions.append(f"parent_id IN ({placeholders})")
@@ -345,10 +495,11 @@ def upsert_note(
         conn.commit()
 
 def mark_note_deleted(note_id: str):
-    """Marca uma nota como deletada para envio na próxima sincronização."""
+    """Marca uma nota e seus vínculos de tag como deletados para envio na próxima sincronização."""
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE notes SET deleted = 1, dirty = 1 WHERE id = ?", (note_id,))
+        cursor.execute("UPDATE note_tags SET deleted = 1, dirty = 1 WHERE note_id = ? AND deleted = 0", (note_id,))
         conn.commit()
 
 def get_dirty_items() -> Dict[str, List[Dict[str, Any]]]:
@@ -361,9 +512,17 @@ def get_dirty_items() -> Dict[str, List[Dict[str, Any]]]:
         cursor.execute("SELECT * FROM folders WHERE dirty = 1")
         dirty_folders = [dict(row) for row in cursor.fetchall()]
 
+        cursor.execute("SELECT * FROM tags WHERE dirty = 1")
+        dirty_tags = [dict(row) for row in cursor.fetchall()]
+
+        cursor.execute("SELECT * FROM note_tags WHERE dirty = 1")
+        dirty_note_tags = [dict(row) for row in cursor.fetchall()]
+
         return {
             "notes": dirty_notes,
-            "folders": dirty_folders
+            "folders": dirty_folders,
+            "tags": dirty_tags,
+            "note_tags": dirty_note_tags
         }
 
 def clean_item_dirty(item_id: str, is_note: bool, new_etag: str = ""):
@@ -376,8 +535,25 @@ def clean_item_dirty(item_id: str, is_note: bool, new_etag: str = ""):
             cursor.execute(f"UPDATE {table} SET dirty = 0 WHERE id = ?", (item_id,))
         conn.commit()
 
+def clean_table_dirty(table: str, item_id: str):
+    if table not in ("notes", "folders", "tags", "note_tags"):
+        return
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"UPDATE {table} SET dirty = 0 WHERE id = ?", (item_id,))
+        conn.commit()
+
 def purge_deleted_item(item_id: str, is_note: bool):
     table = "notes" if is_note else "folders"
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"DELETE FROM {table} WHERE id = ?", (item_id,))
+        cursor.execute("DELETE FROM etag_cache WHERE id = ?", (item_id,))
+        conn.commit()
+
+def purge_table_deleted(table: str, item_id: str):
+    if table not in ("notes", "folders", "tags", "note_tags"):
+        return
     with get_connection() as conn:
         cursor = conn.cursor()
         cursor.execute(f"DELETE FROM {table} WHERE id = ?", (item_id,))

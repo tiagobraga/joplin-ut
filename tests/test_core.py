@@ -18,10 +18,14 @@ from joplin_parser import (
     parse_joplin_file,
     serialize_joplin_note,
     serialize_joplin_folder,
+    serialize_joplin_tag,
+    serialize_joplin_note_tag,
     render_markdown_to_html,
     toggle_markdown_checkbox,
     TYPE_NOTE,
-    TYPE_FOLDER
+    TYPE_FOLDER,
+    TYPE_TAG,
+    TYPE_NOTE_TAG
 )
 from webdav import WebDAVClient
 import db
@@ -66,6 +70,25 @@ class TestJoplinCore(unittest.TestCase):
         self.assertEqual(parsed["body"], "")
         self.assertEqual(parsed["metadata"]["id"], folder_id)
         self.assertEqual(parsed["metadata"]["type_"], TYPE_FOLDER)
+
+    def test_tag_and_note_tag_serialization_and_parsing(self):
+        """Valida serialização e parsing de Tags (type_: 5) e NoteTags (type_: 6)."""
+        tag_id = "d110366db66e46648b20604bfae34f03"
+        tag_title = "urgente"
+        serialized_tag = serialize_joplin_tag(tag_id=tag_id, title=tag_title)
+        parsed_tag = parse_joplin_file(serialized_tag)
+        self.assertEqual(parsed_tag["title"], tag_title)
+        self.assertEqual(parsed_tag["metadata"]["id"], tag_id)
+        self.assertEqual(parsed_tag["metadata"]["type_"], TYPE_TAG)
+
+        link_id = "b4ab020f720445dbbb07b07eb0d0d1d0"
+        note_id = "a1b2c3d4e5f60718293a4b5c6d7e8f90"
+        serialized_link = serialize_joplin_note_tag(assoc_id=link_id, note_id=note_id, tag_id=tag_id)
+        parsed_link = parse_joplin_file(serialized_link)
+        self.assertEqual(parsed_link["metadata"]["id"], link_id)
+        self.assertEqual(parsed_link["metadata"]["note_id"], note_id)
+        self.assertEqual(parsed_link["metadata"]["tag_id"], tag_id)
+        self.assertEqual(parsed_link["metadata"]["type_"], TYPE_NOTE_TAG)
 
     def test_webdav_propfind_xml_parsing(self):
         """Valida a interpretação do XML retornado pelo Nextcloud."""

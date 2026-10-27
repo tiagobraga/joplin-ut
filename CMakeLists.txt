@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(joplin-ut.braga VERSION 1.3.0)
+project(joplin-ut.braga VERSION 1.4.0)
 
 set(CLICK_ARCH "all")
 set(CLICK_FRAMEWORK "ubuntu-touch-24.04-1.x")

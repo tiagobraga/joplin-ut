@@ -10,6 +10,8 @@ Page {
     property string folderId: ""
     property string folderTitle: "Sem Caderno"
     property var foldersList: []
+    property var allTagsList: []
+    property var noteTagsList: []
     property bool isNewNote: noteId === ""
     property bool isPreviewMode: !isNewNote
     property bool isSaving: false
@@ -23,6 +25,42 @@ Page {
 
     signal noteSaved()
     signal noteDeleted()
+    signal tagsUpdated()
+
+    function isTagAttached(tagId) {
+        if (!noteTagsList || !tagId) return false;
+        var target = String(tagId);
+        for (var i = 0; i < noteTagsList.length; i++) {
+            if (noteTagsList[i] && String(noteTagsList[i].id) === target) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function openTagsManager() {
+        if (noteEditPage.isNewNote) {
+            var title = titleField.text.trim() || "Sem Título";
+            titleField.text = title;
+            py.call('main.save_note_content', [
+                "",
+                noteEditPage.folderId || "",
+                title,
+                bodyField.text || ""
+            ], function(res) {
+                if (res && res.success) {
+                    noteEditPage.noteId = res.id || "";
+                    noteEditPage.isNewNote = false;
+                    noteEditPage.hasUnsavedChanges = false;
+                    noteEditPage.noteDirty = 1;
+                    noteEditPage.noteSaved();
+                    PopupUtils.open(noteTagsDialog);
+                }
+            });
+        } else {
+            PopupUtils.open(noteTagsDialog);
+        }
+    }
 
     header: PageHeader {
         id: editHeader
@@ -146,6 +184,86 @@ Page {
             Button {
                 text: "Cancelar"
                 onClicked: PopupUtils.close(moveDlg)
+            }
+        }
+    }
+
+    Component {
+        id: noteTagsDialog
+        Dialog {
+            id: tagsDlg
+            title: "Etiquetas (Tags) da Nota"
+            text: "Toque para marcar/desmarcar ou crie uma nova tag:"
+
+            Row {
+                width: parent.width
+                spacing: units.gu(1)
+
+                TextField {
+                    id: newTagInNoteField
+                    width: parent.width - addTagBtn.width - units.gu(1)
+                    placeholderText: "Nova tag (ex: urgente)"
+                }
+
+                Button {
+                    id: addTagBtn
+                    width: units.gu(9)
+                    text: "+ Criar"
+                    color: LomiriColors.orange
+                    enabled: newTagInNoteField.text.trim().length > 0
+                    onClicked: {
+                        var tagName = newTagInNoteField.text.trim();
+                        newTagInNoteField.text = "";
+                        py.call('main.create_tag', [tagName, noteEditPage.noteId || ""], function(res) {
+                            if (res && res.success) {
+                                noteEditPage.noteTagsList = res.note_tags || [];
+                                py.call('main.get_tags_list', [], function(allT) {
+                                    noteEditPage.allTagsList = allT || [];
+                                    noteEditPage.tagsUpdated();
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+
+            Flickable {
+                width: parent.width
+                height: Math.min(units.gu(28), tagsCol.height)
+                contentHeight: tagsCol.height
+                clip: true
+
+                Column {
+                    id: tagsCol
+                    width: parent.width
+                    spacing: units.gu(0.5)
+
+                    Repeater {
+                        model: noteEditPage.allTagsList || []
+                        delegate: Button {
+                            width: tagsCol.width
+                            height: units.gu(4.5)
+                            property bool attached: noteEditPage.isTagAttached(modelData.id)
+                            text: (attached ? "☑ #" : "☐ #") + (modelData.title || "tag")
+                            color: attached ? "#1B5EBF" : LomiriColors.porcelain
+                            onClicked: {
+                                var tId = String(modelData.id || "");
+                                py.call('main.toggle_note_tag', [noteEditPage.noteId || "", tId], function(res) {
+                                    if (res && res.success) {
+                                        noteEditPage.noteTagsList = res.note_tags || [];
+                                        noteEditPage.tagsUpdated();
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button {
+                text: "Concluir"
+                color: "#1B5EBF"
+                onClicked: PopupUtils.close(tagsDlg)
             }
         }
     }
@@ -504,6 +622,29 @@ Page {
                     }
 
                     Rectangle {
+                        height: units.gu(3.2)
+                        width: tagsBadgeLabel.width + units.gu(2.0)
+                        radius: units.gu(0.8)
+                        color: tagsBadgeMouse.pressed ? "#FCE3D8" : "#FDEEE9"
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        Label {
+                            id: tagsBadgeLabel
+                            anchors.centerIn: parent
+                            text: "🏷️ Tags (" + (noteEditPage.noteTagsList ? noteEditPage.noteTagsList.length : 0) + ") ▾"
+                            fontSize: "small"
+                            font.bold: true
+                            color: "#E95420"
+                        }
+
+                        MouseArea {
+                            id: tagsBadgeMouse
+                            anchors.fill: parent
+                            onClicked: noteEditPage.openTagsManager()
+                        }
+                    }
+
+                    Rectangle {
                         width: units.gu(1)
                         height: units.gu(1)
                         radius: width / 2
@@ -517,6 +658,38 @@ Page {
                         fontSize: "small"
                         color: LomiriColors.slate
                         anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                // Pílulas de Tags ativas da nota
+                Flow {
+                    width: parent.width
+                    spacing: units.gu(0.8)
+                    visible: noteEditPage.noteTagsList && noteEditPage.noteTagsList.length > 0
+
+                    Repeater {
+                        model: noteEditPage.noteTagsList || []
+                        delegate: Rectangle {
+                            height: units.gu(2.8)
+                            width: chipText.width + units.gu(1.6)
+                            radius: units.gu(1.4)
+                            color: "#F0F4F8"
+                            border.color: "#D0E0F8"
+                            border.width: units.dp(1)
+
+                            Label {
+                                id: chipText
+                                anchors.centerIn: parent
+                                text: "#" + (modelData.title || "tag")
+                                fontSize: "small"
+                                color: "#1B5EBF"
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: noteEditPage.openTagsManager()
+                            }
+                        }
                     }
                 }
 
@@ -644,6 +817,13 @@ Page {
                         color: "#E8F0FE"
                         onClicked: PopupUtils.open(moveFolderDialog)
                     }
+                    Button {
+                        height: units.gu(3.8)
+                        width: units.gu(7.6)
+                        text: "🏷️ Tags"
+                        color: "#FDEEE9"
+                        onClicked: noteEditPage.openTagsManager()
+                    }
                 }
             }
 
@@ -707,6 +887,7 @@ Page {
                     noteEditPage.previousBodyText = bodyField.text || "";
                     noteEditPage.folderId = note.parent_id || "";
                     noteEditPage.folderTitle = note.folder_title || "Sem Caderno";
+                    noteEditPage.noteTagsList = note.tags || [];
                     noteEditPage.noteDirty = Number(note.dirty || 0);
                     noteEditPage.noteUpdatedDisplay = note.updated_display || "";
                     noteEditPage.renderedHtml = note.rendered_html || "";

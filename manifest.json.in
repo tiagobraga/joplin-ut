@@ -10,6 +10,6 @@
             "desktop": "joplin-ut.desktop"
         }
     },
-    "version": "1.3.0",
-    "maintainer": "Braga <braga@example.com>"
+    "version": "1.4.0",
+    "maintainer": "Tiago Braga <tiago.braga@gmail.com>"
 }

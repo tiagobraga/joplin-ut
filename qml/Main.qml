@@ -20,6 +20,7 @@ MainView {
     property bool isDrawerOpen: false
     property bool isReady: false
     property var allFolders: []
+    property var allTags: []
 
     // Ponte com o Python
     Python {
@@ -51,6 +52,20 @@ MainView {
             root.allFolders = folders || [];
             drawerComponent.foldersModel = root.allFolders;
         });
+        py.call('main.get_tags_list', [], function(tags) {
+            root.allTags = tags || [];
+            drawerComponent.tagsModel = root.allTags;
+        });
+    }
+
+    function getFolderTitleById(fId) {
+        if (!fId || String(fId).indexOf("tag:") === 0) return "Sem Caderno";
+        for (var i = 0; i < root.allFolders.length; i++) {
+            if (root.allFolders[i] && String(root.allFolders[i].id) === String(fId)) {
+                return String(root.allFolders[i].title || "Sem Caderno");
+            }
+        }
+        return "Sem Caderno";
     }
 
     // Pilha de páginas principal
@@ -75,11 +90,16 @@ MainView {
                 pageStack.push(settingsPageComponent);
             }
             onOpenNote: {
+                var effectiveFolderId = folderId || listPage.currentFolderId || "";
+                if (String(effectiveFolderId).indexOf("tag:") === 0) {
+                    effectiveFolderId = "";
+                }
                 pageStack.push(noteEditPageComponent, {
                     noteId: noteId,
-                    folderId: folderId || listPage.currentFolderId,
-                    folderTitle: listPage.currentFolderId ? listPage.currentFolderTitle : "Sem Caderno",
-                    foldersList: root.allFolders
+                    folderId: effectiveFolderId,
+                    folderTitle: root.getFolderTitleById(effectiveFolderId),
+                    foldersList: root.allFolders,
+                    allTagsList: root.allTags
                 });
             }
         }
@@ -90,6 +110,7 @@ MainView {
         id: noteEditPageComponent
         NoteEditPage {
             foldersList: root.allFolders
+            allTagsList: root.allTags
             onNoteSaved: {
                 refreshFolders();
                 if (pageStack.currentPage && pageStack.currentPage.loadNotes) {
@@ -97,6 +118,12 @@ MainView {
                 }
             }
             onNoteDeleted: {
+                refreshFolders();
+                if (pageStack.currentPage && pageStack.currentPage.loadNotes) {
+                    pageStack.currentPage.loadNotes();
+                }
+            }
+            onTagsUpdated: {
                 refreshFolders();
                 if (pageStack.currentPage && pageStack.currentPage.loadNotes) {
                     pageStack.currentPage.loadNotes();
@@ -168,6 +195,9 @@ MainView {
         onNewFolderRequested: {
             root.isDrawerOpen = false;
             var activeId = drawerComponent.selectedFolderId || "";
+            if (String(activeId).indexOf("tag:") === 0) {
+                activeId = "";
+            }
             var activeTitle = "";
             if (activeId) {
                 for (var i = 0; i < root.allFolders.length; i++) {
@@ -188,6 +218,19 @@ MainView {
             PopupUtils.open(folderOptionsDialog, root, {
                 targetFolderId: folderId,
                 targetFolderTitle: folderTitle
+            });
+        }
+
+        onNewTagRequested: {
+            root.isDrawerOpen = false;
+            PopupUtils.open(newTagDialog, root);
+        }
+
+        onTagOptionsRequested: {
+            root.isDrawerOpen = false;
+            PopupUtils.open(tagOptionsDialog, root, {
+                targetTagId: tagId,
+                targetTagTitle: tagTitle
             });
         }
     }
@@ -315,6 +358,103 @@ MainView {
             Button {
                 text: "Cancelar"
                 onClicked: PopupUtils.close(folderOptDlg);
+            }
+        }
+    }
+
+    // Diálogo para criação de nova etiqueta (tag)
+    Component {
+        id: newTagDialog
+        Dialog {
+            id: tagDlg
+            title: "Nova Etiqueta (Tag)"
+            text: "Digite o nome da nova tag:"
+
+            TextField {
+                id: newTagField
+                placeholderText: "Ex: urgente, ideias, projeto..."
+            }
+
+            Button {
+                text: "Criar Tag"
+                color: "#1B5EBF"
+                enabled: newTagField.text.trim().length > 0
+                onClicked: {
+                    var title = newTagField.text.trim();
+                    PopupUtils.close(tagDlg);
+                    py.call('main.create_tag', [title, ""], function(res) {
+                        if (res && res.success) {
+                            refreshFolders();
+                        }
+                    });
+                }
+            }
+
+            Button {
+                text: "Cancelar"
+                onClicked: PopupUtils.close(tagDlg);
+            }
+        }
+    }
+
+    // Diálogo de opções da tag (toque longo na gaveta: Renomear ou Excluir)
+    Component {
+        id: tagOptionsDialog
+        Dialog {
+            id: tagOptDlg
+            property string targetTagId: ""
+            property string targetTagTitle: ""
+
+            title: "Tag: #" + targetTagTitle
+            text: "Renomear ou excluir esta etiqueta:"
+
+            TextField {
+                id: renameTagField
+                text: tagOptDlg.targetTagTitle
+                placeholderText: "Novo nome da tag"
+            }
+
+            Button {
+                text: "Salvar Novo Nome"
+                color: "#1B5EBF"
+                enabled: renameTagField.text.trim().length > 0 && renameTagField.text.trim() !== tagOptDlg.targetTagTitle
+                onClicked: {
+                    var newName = renameTagField.text.trim();
+                    var tId = tagOptDlg.targetTagId || "";
+                    PopupUtils.close(tagOptDlg);
+                    py.call('main.rename_tag', [tId, newName], function(res) {
+                        if (res && res.success) {
+                            refreshFolders();
+                            if (pageStack.currentPage && pageStack.currentPage.currentFolderId === ("tag:" + tId)) {
+                                pageStack.currentPage.currentFolderTitle = "# " + newName;
+                            }
+                        }
+                    });
+                }
+            }
+
+            Button {
+                text: "Excluir Tag"
+                color: LomiriColors.red
+                onClicked: {
+                    var tId = tagOptDlg.targetTagId || "";
+                    PopupUtils.close(tagOptDlg);
+                    py.call('main.delete_tag', [tId], function(res) {
+                        if (res && res.success) {
+                            refreshFolders();
+                            if (pageStack.currentPage && pageStack.currentPage.currentFolderId === ("tag:" + tId)) {
+                                pageStack.currentPage.currentFolderId = "";
+                                pageStack.currentPage.currentFolderTitle = "Todas as Notas";
+                                pageStack.currentPage.loadNotes();
+                            }
+                        }
+                    });
+                }
+            }
+
+            Button {
+                text: "Cancelar"
+                onClicked: PopupUtils.close(tagOptDlg);
             }
         }
     }

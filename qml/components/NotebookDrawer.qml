@@ -11,8 +11,11 @@ Rectangle {
     signal folderSelected(string folderId, string folderTitle)
     signal newFolderRequested()
     signal folderOptionsRequested(string folderId, string folderTitle)
+    signal newTagRequested()
+    signal tagOptionsRequested(string tagId, string tagTitle)
 
     property var foldersModel: []
+    property var tagsModel: []
     property string selectedFolderId: ""
     property var collapsedMap: ({})
     property bool allCollapsed: false
@@ -22,8 +25,30 @@ Rectangle {
         id: visibleFoldersModel
     }
 
+    ListModel {
+        id: visibleTagsModel
+    }
+
     onFoldersModelChanged: {
         rebuildVisibleFolders();
+    }
+
+    onTagsModelChanged: {
+        rebuildVisibleTags();
+    }
+
+    function rebuildVisibleTags() {
+        visibleTagsModel.clear();
+        if (!tagsModel || tagsModel.length === 0) return;
+        for (var i = 0; i < tagsModel.length; i++) {
+            var t = tagsModel[i];
+            if (!t) continue;
+            visibleTagsModel.append({
+                "id": String(t.id || ""),
+                "title": String(t.title || "tag"),
+                "notes_count": Number(t.notes_count || 0)
+            });
+        }
     }
 
     function isFolderVisible(item, cmap) {
@@ -360,6 +385,113 @@ Rectangle {
                     }
 
                     // Linha divisória fina
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        width: parent.width
+                        height: units.dp(1)
+                        color: theme.palette.normal.baseText
+                        opacity: 0.08
+                    }
+                }
+            }
+
+            // ==========================================
+            // SEÇÃO DE ETIQUETAS (TAGS)
+            // ==========================================
+            Rectangle {
+                width: parent.width
+                height: units.gu(5.0)
+                color: "transparent"
+
+                Label {
+                    anchors.left: parent.left
+                    anchors.leftMargin: units.gu(2)
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: "ETIQUETAS (TAGS)"
+                    fontSize: "small"
+                    font.bold: true
+                    color: LomiriColors.slate
+                }
+
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.rightMargin: units.gu(1.5)
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: newTagLabel.width + units.gu(2)
+                    height: units.gu(3.4)
+                    radius: units.gu(0.6)
+                    color: newTagMouse.pressed ? "#D0E0F8" : "#E8F0FE"
+
+                    Label {
+                        id: newTagLabel
+                        anchors.centerIn: parent
+                        text: "+ Nova Tag"
+                        fontSize: "small"
+                        font.bold: true
+                        color: "#1B5EBF"
+                    }
+
+                    MouseArea {
+                        id: newTagMouse
+                        anchors.fill: parent
+                        onClicked: drawer.newTagRequested()
+                    }
+                }
+            }
+
+            Repeater {
+                model: visibleTagsModel
+                delegate: Rectangle {
+                    width: drawer.width
+                    height: units.gu(5.0)
+                    color: drawer.selectedFolderId === ("tag:" + model.id) ? LomiriColors.porcelain : (tagRowMouse.pressed ? LomiriColors.porcelain : "transparent")
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.bottom: parent.bottom
+                        width: units.dp(4)
+                        color: "#E95420"
+                        visible: drawer.selectedFolderId === ("tag:" + model.id)
+                    }
+
+                    Label {
+                        id: tagTitleLabel
+                        anchors.left: parent.left
+                        anchors.leftMargin: units.gu(2.2)
+                        anchors.right: tagCountLabel.left
+                        anchors.rightMargin: units.gu(1)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "🏷️ #" + (model.title || "tag")
+                        fontSize: "medium"
+                        elide: Text.ElideRight
+                        color: theme.palette.normal.baseText
+                    }
+
+                    Label {
+                        id: tagCountLabel
+                        anchors.right: parent.right
+                        anchors.rightMargin: units.gu(2)
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: model.notes_count ? model.notes_count.toString() : "0"
+                        color: theme.palette.normal.baseText
+                        fontSize: "small"
+                        opacity: 0.55
+                    }
+
+                    MouseArea {
+                        id: tagRowMouse
+                        anchors.fill: parent
+                        onClicked: {
+                            var tagKey = "tag:" + model.id;
+                            drawer.selectedFolderId = tagKey;
+                            drawer.folderSelected(tagKey, "🏷️ #" + model.title);
+                        }
+                        onPressAndHold: {
+                            drawer.tagOptionsRequested(model.id, model.title);
+                        }
+                    }
+
                     Rectangle {
                         anchors.bottom: parent.bottom
                         width: parent.width

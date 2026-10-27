@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Joplin UT
+Comment=Cliente Joplin e Nextcloud para Ubuntu Touch
+Exec=qmlscene %u qml/Main.qml
+Icon=assets/logo.svg
+Terminal=false
+Type=Application
+X-Lomiri-Touch=true
+X-Ubuntu-Touch=true
+X-Lomiri-Splash-Image=assets/logo.svg
