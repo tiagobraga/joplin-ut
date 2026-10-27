@@ -267,9 +267,18 @@ Rectangle {
 
                     Label {
                         width: parent.width
-                        text: drawer.syncMessageText !== ""
-                              ? drawer.syncMessageText
-                              : ("Última sinc.: " + (drawer.lastSyncText || "Nunca"))
+                        text: "Última sinc.: " + (drawer.lastSyncText || "Nunca")
+                        fontSize: "x-small"
+                        font.bold: true
+                        color: theme.palette.normal.baseText
+                        opacity: 0.8
+                        elide: Text.ElideRight
+                    }
+
+                    Label {
+                        width: parent.width
+                        visible: drawer.syncMessageText !== ""
+                        text: drawer.syncMessageText
                         fontSize: "x-small"
                         color: LomiriColors.slate
                         wrapMode: Text.Wrap

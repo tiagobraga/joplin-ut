@@ -94,6 +94,9 @@ MainView {
         py.call('main.perform_sync', [Boolean(forceFull)], function(res) {
             drawerComponent.isSyncing = false;
             if (res && res.success) {
+                if (res.last_sync) {
+                    drawerComponent.lastSyncText = String(res.last_sync);
+                }
                 drawerComponent.syncMessageText = String(res.message || "Sincronização concluída!");
                 refreshFolders();
                 if (pageStack.currentPage && pageStack.currentPage.loadNotes) {

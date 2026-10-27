@@ -316,8 +316,8 @@ def run_synchronization(progress_callback: Optional[Callable[[str, int], None]] 
                 except Exception as e:
                     stats["errors"].append(f"Erro ao enviar vínculo tag {nt_id}: {str(e)}")
 
-        # Salva hora da sincronização
-        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        # Salva data e hora local da sincronização
+        now_iso = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
         save_settings({"last_sync": now_iso})
 
         if progress_callback:
