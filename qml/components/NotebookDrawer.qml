@@ -13,12 +13,17 @@ Rectangle {
     signal folderOptionsRequested(string folderId, string folderTitle)
     signal newTagRequested()
     signal tagOptionsRequested(string tagId, string tagTitle)
+    signal syncRequested(bool forceFull)
 
     property var foldersModel: []
     property var tagsModel: []
     property string selectedFolderId: ""
     property var collapsedMap: ({})
     property bool allCollapsed: false
+    property bool isSyncing: false
+    property string lastSyncText: "Nunca"
+    property int pendingCount: 0
+    property string syncMessageText: ""
 
     // Modelo nativo C++ para garantir atualização visual imediata ao expandir/recolher
     ListModel {
@@ -178,26 +183,135 @@ Rectangle {
         }
     }
 
-    // Botão inferior Novo Caderno
-    Button {
-        id: btnNewFolder
+    // Painel inferior fixo: Novo Caderno + Status e Botões de Sincronização
+    Rectangle {
+        id: drawerBottomPanel
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.margins: units.gu(2)
-        text: "+ Novo Caderno"
-        color: LomiriColors.orange
-        onClicked: drawer.newFolderRequested()
+        height: bottomPanelCol.height + units.gu(2.4)
+        color: theme.palette.normal.background
+        z: 15
+
+        Rectangle {
+            anchors.top: parent.top
+            width: parent.width
+            height: units.dp(1)
+            color: theme.palette.normal.baseText
+            opacity: 0.12
+        }
+
+        Column {
+            id: bottomPanelCol
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: units.gu(1.5)
+            spacing: units.gu(1.0)
+
+            Button {
+                id: btnNewFolder
+                width: parent.width
+                height: units.gu(4.2)
+                text: "+ Novo Caderno"
+                color: LomiriColors.orange
+                onClicked: drawer.newFolderRequested()
+            }
+
+            // Card de Status de Sincronização
+            Rectangle {
+                width: parent.width
+                height: syncCardCol.height + units.gu(1.6)
+                radius: units.gu(0.8)
+                color: drawer.isSyncing ? "#E8F0FE" : (drawer.pendingCount > 0 ? "#FFF4E5" : "#F4F6F9")
+                border.color: drawer.isSyncing ? "#1B5EBF" : (drawer.pendingCount > 0 ? "#E95420" : "#D0D7DE")
+                border.width: units.dp(1)
+
+                Column {
+                    id: syncCardCol
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: units.gu(0.8)
+                    spacing: units.gu(0.4)
+
+                    Row {
+                        width: parent.width
+                        spacing: units.gu(0.8)
+
+                        ActivityIndicator {
+                            id: drawerSyncSpinner
+                            running: drawer.isSyncing
+                            visible: drawer.isSyncing
+                            width: units.gu(2.0)
+                            height: units.gu(2.0)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Label {
+                            width: parent.width - (drawerSyncSpinner.visible ? units.gu(3.0) : 0)
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: drawer.isSyncing
+                                  ? "Sincronizando com Nextcloud..."
+                                  : (drawer.pendingCount > 0
+                                     ? ("⏳ " + drawer.pendingCount + " alteração(ões) pendente(s)")
+                                     : "✓ Sincronizado com Nextcloud")
+                            fontSize: "small"
+                            font.bold: true
+                            color: drawer.isSyncing
+                                   ? "#1B5EBF"
+                                   : (drawer.pendingCount > 0 ? "#E95420" : "#0E8420")
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        text: drawer.syncMessageText !== ""
+                              ? drawer.syncMessageText
+                              : ("Última sinc.: " + (drawer.lastSyncText || "Nunca"))
+                        fontSize: "x-small"
+                        color: LomiriColors.slate
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+
+                    Row {
+                        width: parent.width
+                        spacing: units.gu(0.8)
+
+                        Button {
+                            width: (parent.width - units.gu(0.8)) * 0.56
+                            height: units.gu(3.6)
+                            text: drawer.isSyncing ? "Aguarde..." : "🔄 Sincronizar"
+                            color: "#1B5EBF"
+                            enabled: !drawer.isSyncing
+                            onClicked: drawer.syncRequested(false)
+                        }
+
+                        Button {
+                            width: (parent.width - units.gu(0.8)) * 0.44
+                            height: units.gu(3.6)
+                            text: "⚡ Forçar"
+                            color: LomiriColors.porcelain
+                            enabled: !drawer.isSyncing
+                            onClicked: drawer.syncRequested(true)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Área rolável com lista de cadernos
     Flickable {
         id: drawerFlickable
         anchors.top: drawerHeader.bottom
-        anchors.bottom: btnNewFolder.top
+        anchors.bottom: drawerBottomPanel.top
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottomMargin: units.gu(1)
+        anchors.bottomMargin: units.gu(0.5)
         contentHeight: drawerContentCol.height
         clip: true
 

@@ -392,6 +392,35 @@ def get_app_settings() -> Dict[str, Any]:
     """Retorna as configurações atuais."""
     return load_settings()
 
+def get_sync_status() -> Dict[str, Any]:
+    """Retorna o horário da última sincronização e o total de itens locais pendentes de envio (dirty=1)."""
+    try:
+        settings = load_settings()
+        last_sync = settings.get("last_sync") or "Nunca"
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                (SELECT COUNT(*) FROM notes WHERE dirty = 1) +
+                (SELECT COUNT(*) FROM folders WHERE dirty = 1) +
+                (SELECT COUNT(*) FROM tags WHERE dirty = 1) +
+                (SELECT COUNT(*) FROM note_tags WHERE dirty = 1)
+            AS total_dirty
+        """)
+        row = cursor.fetchone()
+        conn.close()
+        pending_count = int(row["total_dirty"]) if row and row["total_dirty"] is not None else 0
+        return {
+            "last_sync": last_sync,
+            "pending_count": pending_count
+        }
+    except Exception as e:
+        print(f"[Main] Erro ao obter status de sync: {e}", flush=True)
+        return {
+            "last_sync": "Nunca",
+            "pending_count": 0
+        }
+
 def save_app_settings(server_url: str, username: str, password: str, joplin_dir: str) -> Dict[str, Any]:
     """Salva credenciais e configurações."""
     ok = save_settings({

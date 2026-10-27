@@ -22,6 +22,12 @@ MainView {
     property var allFolders: []
     property var allTags: []
 
+    onIsDrawerOpenChanged: {
+        if (isDrawerOpen && isReady) {
+            refreshSyncStatus();
+        }
+    }
+
     // Ponte com o Python
     Python {
         id: py
@@ -46,6 +52,16 @@ MainView {
         }
     }
 
+    function refreshSyncStatus() {
+        if (!root.isReady) return;
+        py.call('main.get_sync_status', [], function(status) {
+            if (status) {
+                drawerComponent.lastSyncText = String(status.last_sync || "Nunca");
+                drawerComponent.pendingCount = Number(status.pending_count || 0);
+            }
+        });
+    }
+
     function refreshFolders() {
         if (!root.isReady) return;
         py.call('main.get_folders_list', [], function(folders) {
@@ -55,6 +71,39 @@ MainView {
         py.call('main.get_tags_list', [], function(tags) {
             root.allTags = tags || [];
             drawerComponent.tagsModel = root.allTags;
+        });
+        refreshSyncStatus();
+    }
+
+    Timer {
+        id: clearDrawerSyncMsgTimer
+        interval: 6000
+        repeat: false
+        onTriggered: {
+            drawerComponent.syncMessageText = "";
+        }
+    }
+
+    function runDrawerSync(forceFull) {
+        if (!root.isReady || drawerComponent.isSyncing) return;
+        drawerComponent.isSyncing = true;
+        drawerComponent.syncMessageText = forceFull
+            ? "Verificando todos os arquivos no Nextcloud..."
+            : "Sincronizando alterações com o Nextcloud...";
+
+        py.call('main.perform_sync', [Boolean(forceFull)], function(res) {
+            drawerComponent.isSyncing = false;
+            if (res && res.success) {
+                drawerComponent.syncMessageText = String(res.message || "Sincronização concluída!");
+                refreshFolders();
+                if (pageStack.currentPage && pageStack.currentPage.loadNotes) {
+                    pageStack.currentPage.loadNotes();
+                }
+            } else {
+                drawerComponent.syncMessageText = (res && res.message) ? String(res.message) : "Erro de sincronização.";
+                refreshSyncStatus();
+            }
+            clearDrawerSyncMsgTimer.restart();
         });
     }
 
@@ -232,6 +281,10 @@ MainView {
                 targetTagId: tagId,
                 targetTagTitle: tagTitle
             });
+        }
+
+        onSyncRequested: {
+            root.runDrawerSync(forceFull);
         }
     }
 
