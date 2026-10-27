@@ -1,0 +1,16 @@
+# Clickable / CMake build artifacts
+build/
+.clickable/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local SQLite databases or temporary files
+*.db
+*.db-journal
+*.sqlite
+*.log
+.DS_Store

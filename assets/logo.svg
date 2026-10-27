@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B5EBF"/>
+      <stop offset="100%" stop-color="#0E3675"/>
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E95420"/>
+      <stop offset="100%" stop-color="#FF7A33"/>
+    </linearGradient>
+    <filter id="dropShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <!-- Fundo com cantos arredondados no estilo Ubuntu Touch / Lomiri -->
+  <rect x="24" y="24" width="464" height="464" rx="96" ry="96" fill="url(#bgGrad)" filter="url(#dropShadow)"/>
+
+  <!-- Faixa de sotaque Ubuntu (Laranja Ubuntu) na lombada -->
+  <path d="M 120 72 L 138 72 C 144 72 148 76 148 82 L 148 430 C 148 436 144 440 138 440 L 120 440 C 104 440 92 428 92 412 L 92 100 C 92 84 104 72 120 72 Z" fill="url(#accentGrad)" opacity="0.9"/>
+
+  <!-- Letra "J" estilizada de Joplin -->
+  <path d="M 280 140 
+           L 348 140 
+           L 348 308 
+           C 348 348 334 376 306 394 
+           C 278 412 240 416 196 406 
+           L 204 352 
+           C 230 358 252 356 268 344 
+           C 284 332 292 312 292 284 
+           L 292 140 
+           Z" 
+        fill="#FFFFFF" 
+        filter="url(#dropShadow)"/>
+
+  <!-- Ponto do "J" em formato de caneta / anotação -->
+  <circle cx="214" cy="156" r="22" fill="#FFFFFF" opacity="0.95"/>
+</svg>
