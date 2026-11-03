@@ -54,7 +54,9 @@ DEFAULT_SETTINGS = {
     "last_sync": "",
     "sync_on_startup": True,
     "sort_by": "updated_time",   # "updated_time", "created_time", "title"
-    "sort_order": "DESC"         # "DESC", "ASC"
+    "sort_order": "DESC",        # "DESC", "ASC"
+    "last_folder_id": "",
+    "last_folder_title": "Todas as Notas"
 }
 
 def load_settings() -> Dict[str, Any]:

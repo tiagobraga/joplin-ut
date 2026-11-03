@@ -261,6 +261,17 @@ def save_sort_preferences(sort_by: str, sort_order: str) -> Dict[str, Any]:
     })
     return {"success": ok}
 
+def save_last_folder(folder_id: str, folder_title: str) -> Dict[str, Any]:
+    """Salva o último caderno ou etiqueta visualizado."""
+    clean_id = (folder_id or "").strip()
+    clean_title = (folder_title or "").strip() or ("Todas as Notas" if not clean_id else "Caderno")
+    print(f"[Main] save_last_folder: id='{clean_id}', title='{clean_title}'", flush=True)
+    ok = save_settings({
+        "last_folder_id": clean_id,
+        "last_folder_title": clean_title
+    })
+    return {"success": ok}
+
 def _resolve_folder_title(folder_id: str) -> str:
     if not folder_id:
         return "Sem Caderno"
@@ -389,8 +400,39 @@ def delete_single_note(note_id: str) -> Dict[str, Any]:
         return {"success": False, "error": str(e)}
 
 def get_app_settings() -> Dict[str, Any]:
-    """Retorna as configurações atuais."""
-    return load_settings()
+    """Retorna as configurações atuais, validando a existência do último caderno acessado."""
+    settings = load_settings()
+    last_folder_id = (settings.get("last_folder_id") or "").strip()
+    last_folder_title = (settings.get("last_folder_title") or "").strip()
+
+    if last_folder_id:
+        try:
+            if last_folder_id.startswith("tag:"):
+                tag_id = last_folder_id[4:]
+                tag = get_tag_by_id(tag_id)
+                if not tag or tag.get("deleted") == 1:
+                    last_folder_id = ""
+                    last_folder_title = "Todas as Notas"
+                else:
+                    last_folder_title = f"🏷️ #{tag.get('title', 'tag')}"
+            else:
+                folder = get_folder_by_id(last_folder_id)
+                if not folder or folder.get("deleted") == 1:
+                    last_folder_id = ""
+                    last_folder_title = "Todas as Notas"
+                else:
+                    last_folder_title = folder.get("title") or "Sem Nome"
+        except Exception as e:
+            print(f"[Main] Erro ao validar last_folder: {e}", flush=True)
+            last_folder_id = ""
+            last_folder_title = "Todas as Notas"
+    else:
+        last_folder_id = ""
+        last_folder_title = "Todas as Notas"
+
+    settings["last_folder_id"] = last_folder_id
+    settings["last_folder_title"] = last_folder_title
+    return settings
 
 def get_sync_status() -> Dict[str, Any]:
     """Retorna o horário da última sincronização e o total de itens locais pendentes de envio (dirty=1)."""

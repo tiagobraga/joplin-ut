@@ -150,6 +150,35 @@ class TestJoplinCore(unittest.TestCase):
         self.assertTrue(changed2)
         self.assertIn("\t\t- [ ] Tarefa pendente", reverted_md)
 
+    def test_last_folder_preferences(self):
+        """Valida se a preferência de último caderno visto é persistida corretamente."""
+        import tempfile
+        import config
+        from main import save_last_folder, get_app_settings
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            old_xdg = os.environ.get("XDG_CONFIG_HOME")
+            try:
+                os.environ["XDG_CONFIG_HOME"] = tmp_dir
+                # Salva caderno específico
+                res = save_last_folder("f1234567890abcdef1234567890abcdef", "Meu Caderno")
+                self.assertTrue(res["success"])
+                settings = config.load_settings()
+                self.assertEqual(settings["last_folder_id"], "f1234567890abcdef1234567890abcdef")
+                self.assertEqual(settings["last_folder_title"], "Meu Caderno")
+
+                # Salva Todas as Notas
+                res2 = save_last_folder("", "")
+                self.assertTrue(res2["success"])
+                settings2 = config.load_settings()
+                self.assertEqual(settings2["last_folder_id"], "")
+                self.assertEqual(settings2["last_folder_title"], "Todas as Notas")
+            finally:
+                if old_xdg is not None:
+                    os.environ["XDG_CONFIG_HOME"] = old_xdg
+                else:
+                    os.environ.pop("XDG_CONFIG_HOME", None)
+
     def test_openstore_package_and_policy_validation(self):
         """Valida manifesto Click, política AppArmor 2404.1, ícone e permissões OpenStore."""
         import json

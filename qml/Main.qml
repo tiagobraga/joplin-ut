@@ -242,6 +242,7 @@ MainView {
                 pageStack.currentPage.currentFolderTitle = folderTitle;
                 pageStack.currentPage.loadNotes();
             }
+            py.call('main.save_last_folder', [folderId, folderTitle], function(res) {});
         }
 
         onNewFolderRequested: {
@@ -372,6 +373,7 @@ MainView {
                             refreshFolders();
                             if (pageStack.currentPage && pageStack.currentPage.currentFolderId === fId) {
                                 pageStack.currentPage.currentFolderTitle = newName;
+                                py.call('main.save_last_folder', [fId, newName], function(res) {});
                             }
                         }
                     });
@@ -404,7 +406,9 @@ MainView {
                             if (pageStack.currentPage && pageStack.currentPage.currentFolderId === fId) {
                                 pageStack.currentPage.currentFolderId = "";
                                 pageStack.currentPage.currentFolderTitle = "Todas as Notas";
+                                drawerComponent.selectedFolderId = "";
                                 pageStack.currentPage.loadNotes();
+                                py.call('main.save_last_folder', ["", "Todas as Notas"], function(res) {});
                             }
                         }
                     });
@@ -482,7 +486,9 @@ MainView {
                         if (res && res.success) {
                             refreshFolders();
                             if (pageStack.currentPage && pageStack.currentPage.currentFolderId === ("tag:" + tId)) {
-                                pageStack.currentPage.currentFolderTitle = "# " + newName;
+                                var updatedTagTitle = "🏷️ #" + newName;
+                                pageStack.currentPage.currentFolderTitle = updatedTagTitle;
+                                py.call('main.save_last_folder', ["tag:" + tId, updatedTagTitle], function(res) {});
                             }
                         }
                     });
@@ -501,7 +507,9 @@ MainView {
                             if (pageStack.currentPage && pageStack.currentPage.currentFolderId === ("tag:" + tId)) {
                                 pageStack.currentPage.currentFolderId = "";
                                 pageStack.currentPage.currentFolderTitle = "Todas as Notas";
+                                drawerComponent.selectedFolderId = "";
                                 pageStack.currentPage.loadNotes();
+                                py.call('main.save_last_folder', ["", "Todas as Notas"], function(res) {});
                             }
                         }
                     });

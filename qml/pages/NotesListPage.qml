@@ -11,6 +11,7 @@ Page {
     property bool isSearching: false
     property bool isSyncing: false
     property string syncStatusText: ""
+    property bool preferencesLoaded: false
 
     // Modelo nativo e reativo do Qt Quick (garante reconstrução visual imediata dos itens)
     ListModel {
@@ -40,7 +41,7 @@ Page {
 
     // Recarrega as notas sempre que a página volta a ficar visível
     onVisibleChanged: {
-        if (visible && root.isReady) {
+        if (visible && root.isReady && notesListPage.preferencesLoaded) {
             notesListPage.loadNotes();
         }
     }
@@ -219,9 +220,15 @@ Page {
     function loadSortPreferences(shouldLoadNotes) {
         if (!root.isReady) return;
         py.call('main.get_app_settings', [], function(s) {
+            notesListPage.preferencesLoaded = true;
             if (s) {
                 notesListPage.sortBy = s.sort_by || "updated_time";
                 notesListPage.sortOrder = s.sort_order || "DESC";
+                if (s.last_folder_id !== undefined && s.last_folder_id !== null) {
+                    notesListPage.currentFolderId = s.last_folder_id;
+                    notesListPage.currentFolderTitle = s.last_folder_title || (s.last_folder_id === "" ? "Todas as Notas" : "Caderno");
+                    drawerComponent.selectedFolderId = s.last_folder_id;
+                }
             }
             if (shouldLoadNotes) {
                 notesListPage.loadNotes();
