@@ -27,6 +27,7 @@ Page {
 
     signal toggleDrawer()
     signal openSettings()
+    signal openAbout()
     signal openNote(string noteId, string folderId)
 
     // Recarrega notas assim que o backend Python estiver pronto
@@ -80,6 +81,11 @@ Page {
                 iconName: "settings"
                 text: "Configurações"
                 onTriggered: notesListPage.openSettings()
+            },
+            Action {
+                iconName: "info"
+                text: "Sobre"
+                onTriggered: notesListPage.openAbout()
             }
         ]
 

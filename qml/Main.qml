@@ -141,6 +141,9 @@ MainView {
             onOpenSettings: {
                 pageStack.push(settingsPageComponent);
             }
+            onOpenAbout: {
+                PopupUtils.open(aboutDialog, root);
+            }
             onOpenNote: {
                 var effectiveFolderId = folderId || listPage.currentFolderId || "";
                 if (String(effectiveFolderId).indexOf("tag:") === 0) {
@@ -519,6 +522,67 @@ MainView {
             Button {
                 text: "Cancelar"
                 onClicked: PopupUtils.close(tagOptDlg);
+            }
+        }
+    }
+
+    // Diálogo Sobre
+    Component {
+        id: aboutDialog
+        Dialog {
+            id: aboutDlg
+            title: "Sobre o Joplin UT"
+
+            Item {
+                width: parent.width
+                implicitHeight: aboutCol.implicitHeight + units.gu(1)
+
+                Column {
+                    id: aboutCol
+                    width: parent.width
+                    spacing: units.gu(1.5)
+
+                    Row {
+                        spacing: units.gu(1.5)
+                        anchors.horizontalCenter: parent.horizontalCenter
+
+                        Image {
+                            source: Qt.resolvedUrl("../assets/logo.svg")
+                            width: units.gu(5)
+                            height: units.gu(5)
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            Label {
+                                text: "Joplin UT"
+                                font.bold: true
+                                font.pixelSize: FontUtils.sizeToPixels("large")
+                            }
+                            Label {
+                                text: "Versão 1.5.0"
+                                color: LomiriColors.slate
+                                font.pixelSize: FontUtils.sizeToPixels("small")
+                            }
+                        }
+                    }
+
+                    Label {
+                        width: parent.width
+                        wrapMode: Text.Wrap
+                        textFormat: Text.RichText
+                        text: "Joplin UT é um sistema desenvolvido em Vibe Coding que permite a integração com servidores NextCloud para notas em Joplin. Ele é um projeto opensource desenvolvido por Tiago Emmanuel Nunes Braga no âmbito do grupo de pesquisa <a href=\"https://curio.ia.br\" style=\"color: #1B5EBF; font-weight: bold;\">Curió</a>.<br><br>Currículo lattes: <a href=\"http://lattes.cnpq.br/8376134230259399\" style=\"color: #1B5EBF; font-weight: bold;\">Tiago Emmanuel Nunes Braga</a>"
+                        onLinkActivated: Qt.openUrlExternally(link)
+                    }
+                }
+            }
+
+            Button {
+                text: "Fechar"
+                color: "#1B5EBF"
+                onClicked: PopupUtils.close(aboutDlg)
             }
         }
     }
