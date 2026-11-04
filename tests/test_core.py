@@ -202,13 +202,23 @@ class TestJoplinCore(unittest.TestCase):
 
         click_files = list((root_dir / "build" / "all" / "app").glob("*.click"))
         if click_files:
-            out = subprocess.check_output(["dpkg-deb", "-c", str(click_files[0])], text=True)
+            click_pkg = str(click_files[0])
+            out = subprocess.check_output(["dpkg-deb", "-c", click_pkg], text=True)
             self.assertNotIn("__pycache__", out)
             for line in out.splitlines():
                 if line.strip():
                     perms = line.split()[0]
                     # Nenhum arquivo no pacote Click pode ter permissão de escrita global (o+w)
                     self.assertNotEqual(perms[8], "w", f"Permissão world-writable detectada: {line}")
+
+            # Valida extração completa compatível com OpenStore click-review
+            import tempfile
+            with tempfile.TemporaryDirectory() as td:
+                subprocess.check_output(["dpkg-deb", "-x", click_pkg, td])
+                subprocess.check_output(["dpkg-deb", "-e", click_pkg, f"{td}/DEBIAN"])
+                preinst_path = Path(td) / "DEBIAN" / "preinst"
+                self.assertTrue(preinst_path.exists())
+                self.assertIn("#! /bin/sh", preinst_path.read_text())
 
 if __name__ == "__main__":
     unittest.main()
